@@ -83,6 +83,14 @@ usesTV n (SigT t  _ ) = usesTV n t
 usesTV n (ForallT bs _ t) = usesTV n t && n `notElem` map tvName bs
 usesTV _ _ = False
 
+#if __GLASGOW_HASKELL__ < 909
+mkArgPat :: Pat -> Pat
+mkArgPat = id
+#else
+mkArgPat :: Pat -> ArgPat
+mkArgPat = VisAP
+#endif
+
 -- | Analyze constructor argument.
 mkArg :: Type -> Type -> Q Arg
 mkArg (VarT n) t
@@ -106,7 +114,7 @@ mkArg (VarT n) t
             , "in a constructor's argument type: `" ++ pprint t ++ "'" ]
           let tup = nonUnaryTupleT ts
           xs <- mapM (const $ newName "x") ts
-          return $ Captured tup (LamE (map VarP xs) (nonUnaryTupE $ map VarE xs))
+          return $ Captured tup (LamE (map (mkArgPat . VarP) xs) (nonUnaryTupE $ map VarE xs))
         _ -> fail $ unlines
               [ "expected a type variable `" ++ pprint n ++ "'"
               , "or a type like (a1 -> ... -> aN -> " ++ pprint n ++ ")"
@@ -206,7 +214,7 @@ liftCon' typeSig tvbs cx f n ns cn ts = do
   let opType  = foldr (AppT . AppT ArrowT) (AppT (VarT m) retType) ps
   -- picking names for the implementation
   xs  <- mapM (const $ newName "p") ps
-  let pat  = map VarP xs                      -- this is LHS
+  let pat  = map (mkArgPat . VarP) xs         -- this is LHS
       exprs = zipExprs (map VarE xs) es args  -- this is what ctor would be applied to
       fval = foldl AppE (ConE cn) exprs       -- this is RHS without liftF
       ns' = nub (concatMap extractVars ns)
